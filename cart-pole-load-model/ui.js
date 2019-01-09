@@ -48,6 +48,9 @@ const trainProgress = document.getElementById('train-progress');
 
 const stepsContainer = document.getElementById('steps-container');
 
+const jsonInput = document.getElementById('json-upload');
+const weightsInput = document.getElementById('weights-upload');
+
 // Module-global instance of policy network.
 let policyNet;
 let stopRequested = false;
@@ -226,8 +229,7 @@ async function updateUIControlState() {
     createModelButton.disabled = true;
   }
   createModelButton.disabled = policyNet != null;
-  hiddenLayerSizesInput.disabled = policyNet != null;
-  trainButton.disabled = policyNet == null;
+  trainButton.disabled = true;
   testButton.disabled = policyNet == null;
   renderDuringTrainingCheckbox.checked = renderDuringTraining;
 }
@@ -235,11 +237,6 @@ async function updateUIControlState() {
 export async function setUpUI() {
   const cartPole = new CartPole(true);
 
-  if (await SaveablePolicyNetwork.checkStoredModelStatus() != null) {
-    policyNet = await SaveablePolicyNetwork.loadModel();
-    logStatus('Loaded policy network from IndexedDB.');
-    hiddenLayerSizesInput.value = policyNet.hiddenLayerSizes();
-  }
   await updateUIControlState();
 
   renderDuringTrainingCheckbox.addEventListener('change', () => {
@@ -248,28 +245,10 @@ export async function setUpUI() {
 
   createModelButton.addEventListener('click', async () => {
     try {
-      const hiddenLayerSizes =
-          hiddenLayerSizesInput.value.trim().split(',').map(v => {
-            const num = Number.parseInt(v.trim());
-            if (!(num > 0)) {
-              throw new Error(
-                  `Invalid hidden layer sizes string: ` +
-                  `${hiddenLayerSizesInput.value}`);
-            }
-            return num;
-          });
       const decayRate = Number.parseFloat(decayRateInput.value);
-      console.log(decayRate)
-      if (!(decayRate > 0 && decayRate < 1)) {
-        throw new Error(`Invalid decay rate: ${decayRate}`);
-      }
-      const learningRate = Number.parseFloat(learningRateInput.value);
-      console.log('constructing new instance of SaveablePolicyNetwork');
       policyNet = new SaveablePolicyNetwork(
-        hiddenLayerSizes,
-        cartPole.getStateTensor().shape,
-        learningRate,
-        decayRate);
+        tf.io.browserFiles([jsonInput.files[0], weightsInput.files[0]]));
+      await policyNet.loadModel()
       console.log('DONE constructing new instance of SaveablePolicyNetwork');
       await updateUIControlState();
     } catch (err) {
@@ -367,6 +346,7 @@ export async function setUpUI() {
         break;
       }
     }
+    console.log(`REWARD: ${steps}`)
     if (stopRequested) {
       logStatus(`Test stopped by user after ${steps} step(s).`);
     } else {

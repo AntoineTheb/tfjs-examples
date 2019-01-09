@@ -61,20 +61,12 @@ class PolicyNetwork {
    *   - An Array of numbers (for any number of hidden layers).
    *   - An instance of tf.Model.
    */
-  constructor(hiddenLayerSizesOrModel, input_shape, learningRate, decayRate) {
-    this.memory = []
-    this.gamma = 0.95;
-    this.epsilon = 1.0;
-    this.epsilon_min = 0.01;
-    this.epsilon_decay = decayRate;
-    this.learning_rate = learningRate;
+  constructor(jsonAndWeightsFile) {
+    this.file = jsonAndWeightsFile
+  }
 
-    if (hiddenLayerSizesOrModel instanceof tf.Model) {
-      this.model = hiddenLayerSizesOrModel;
-    } else {
-      this.model = this.createModel(hiddenLayerSizesOrModel, input_shape);
-      this.target_model = this.createModel(hiddenLayerSizesOrModel, input_shape);    
-    }
+  async loadModel() {
+    this.model = await tf.loadModel(this.file)
   }
 
   /**
@@ -84,75 +76,12 @@ class PolicyNetwork {
    *   a single number (for a single hidden layer) or an Array of numbers (for
    *   any number of hidden layers).
    */
-  createModel(hiddenLayerSizes, input_shape) {
-    if (!Array.isArray(hiddenLayerSizes)) {
-      hiddenLayerSizes = [hiddenLayerSizes];
-    }
-    const model = tf.sequential();
-    hiddenLayerSizes.forEach((hiddenLayerSize, i) => {
-      model.add(tf.layers.dense({
-        units: hiddenLayerSize,
-        activation: 'relu',
-        // `inputShape` is required only for the first layer.
-        inputShape: i === 0 ? [4]: undefined
-      }));
-    });
-    // The last layer has only one unit. The single output number will be
-    // converted to a 0-1 for left and right
-    model.add(tf.layers.dense({units: 2, activation:'linear'}));
-    model.compile({
-      loss: tf.losses.meanSquaredError,
-      optimizer: tf.train.adam(this.learning_rate),
-      metrics: [tf.metrics.meanAbsoluteError]
-    });
-    model.summary()
-    return model
-  }
 
-  remember(state, action, reward, nextState, isDone) {
-    if (this.memory.length > 1000000) {
-      old = this.memory.shift()
-      tf.dispose(old)
-    }
-    this.memory.push([state, action, reward, nextState, isDone])
-  }
-
-  async replay(batch_size) {
-    const samples = sample(this.memory, batch_size);
-    const losses = []
-    for (let [state, action, reward, nextState, isDone] of samples) {
-      const tensorQ = tf.tidy(() => {
-        let target = tf.tensor(reward);
-        if (!isDone) {
-          const prediction = this.model.predict(nextState).dataSync()[0];
-          target = tf.add(reward, tf.mul(tf.tensor(this.gamma), tf.max(prediction)));
-        }
-        const Q = this.model.predict(state).dataSync()
-        Q[action] = target.dataSync();
-        return tf.tensor(Q).expandDims(0);
-      });
-      losses.push((await this.model.trainOnBatch(state, tensorQ, { batchSize: 1 }))[0]);
-    }
-    if (this.epsilon > this.epsilon_min) {
-      this.epsilon *= this.epsilon_decay
-    }
-
-    return tf.mean(losses).dataSync()
-  }
-
-  update_target_model() {
-    this.target_model.setWeights(this.model.getWeights())
-  }
-
-  act(state, isTesting = false) {
-    if (Math.random() <= this.epsilon && !isTesting) {
-      return +(Math.random() < 0.5)
-    } else {
-      return tf.tidy(() => {
-        const pred = this.model.predict(state).dataSync()
-        return tf.argMax(pred)
-      }).dataSync();
-    }
+  act(state) {
+    return tf.tidy(() => {
+      const pred = this.model.predict(state).dataSync()
+      return tf.argMax(pred)
+    }).dataSync();
   }
 
   /**
@@ -171,60 +100,7 @@ class PolicyNetwork {
    * @returns {number[]} The number of steps completed in the `numGames` games
    *   in this round of training.
    */
-  async train(
-      cartPoleSystem, numGames, maxStepsPerGame) {
-    // TODO: Set batch size in UI
-    const batch_size = 20
-    const allRewards = [];
-    const gameSteps = [];
-    onGameEnd(0, numGames);
-    for (let i = 0; i < numGames; ++i) {
-      console.log(this.epsilon)
-      // Randomly initialize the state of the cart-pole system at the beginning
-      // of every game.
-      cartPoleSystem.setRandomState();
-      const gameRewards = [];
-      const gameGradients = [];
-      let gameLoss = []
-      for (let j = 0; j < maxStepsPerGame; ++j) {
-        const state = cartPoleSystem.getStateTensor();
-        const action = this.act(state);
-        const isDone = cartPoleSystem.update(action);
-        const nextState = cartPoleSystem.getStateTensor();
-        const reward = isDone ? -1 : 1;
-        gameRewards.push(reward);
-        this.remember(state, action, reward, nextState, isDone);
-        if (isDone) break;
-        if (this.memory.length > batch_size) {
-          const history = await this.replay(batch_size);
-          gameLoss.push(history)
-        }
-        await maybeRenderDuringTraining(cartPoleSystem);
-      }
-      if (gameLoss.length > 0) {
-        console.log(`Loss: ${tf.mean(gameLoss).dataSync()}`)
-      }
 
-      gameSteps.push(gameRewards.length);
-      onGameEnd(i+1, numGames);
-      await tf.nextFrame();
-    }
-    this.update_target_model()
-    return gameSteps;
-  }
-
-}
-
-function reshape(arr, J, I) {
-  const newArr = []
-  for (let j = 0; j < J; ++j) {
-    const tempArr = []
-    for (let i = 0; i < I; ++i) {
-      tempArr.push(arr[(i * I) + j])
-    }
-    newArr.push(tempArr)
-  }
-  return newArr
 }
 
 // The IndexedDB path where the model of the policy network will be saved.
@@ -239,8 +115,8 @@ export class SaveablePolicyNetwork extends PolicyNetwork {
    *
    * @param {number | number[]} hiddenLayerSizesOrModel
    */
-  constructor(hiddenLayerSizesOrModel, input_shape, learningRate, decayRate) {
-    super(hiddenLayerSizesOrModel, input_shape, learningRate, decayRate);
+  constructor(jsonAndWeightsFile) {
+    super(jsonAndWeightsFile);
   }
 
   /**
