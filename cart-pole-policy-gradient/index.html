@@ -121,7 +121,7 @@ limitations under the License.
             <div class="with-rows init-model">
               <div class="input-div with-rows">
                 <label class="input-label">Hidden layer size(s) (e.g.: "5", "8,6"):</label>
-                <input id="hidden-layer-sizes" value="24, 24"></input>
+                <input id="hidden-layer-sizes" value="4"></input>
               </div>
               <button id="create-model" disabled="true">Create model</button>
             </div>
@@ -138,23 +138,23 @@ limitations under the License.
           <div class="with-rows">
             <div class="input-div">
               <label class="input-label">Number of iterations:</label>
-              <input id="num-iterations" value="200"></input>
+              <input id="num-iterations" value="20"></input>
             </div>
             <div class="input-div">
               <label class="input-label">Games per iteration:</label>
-              <input id="games-per-iteration" value="1"></input>
+              <input id="games-per-iteration" value="20"></input>
             </div>
             <div class="input-div">
               <label class="input-label">Max. steps per game:</label>
               <input id="max-steps-per-game" value="500"></input>
             </div>
             <div class="input-div">
-              <label class="input-label">Decay rate:</label>
-              <input id="decay-rate" value="0.995"></input>
+              <label class="input-label">Reward discount rate:</label>
+              <input id="discount-rate" value="0.95"></input>
             </div>
             <div class="input-div">
               <label class="input-label">Learning rate:</label>
-              <input id="learning-rate" value="0.001"></input>
+              <input id="learning-rate" value="0.05"></input>
             </div>
             <div class="input-div">
               <label class="input-label">Render during training:</label>
